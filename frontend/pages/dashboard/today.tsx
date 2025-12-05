@@ -14,23 +14,27 @@ export default function TodayDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // -------------------------
+  // FETCH TASKS
+  // -------------------------
   async function fetchTasks() {
     setLoading(true);
     setError(null);
 
     try {
-      // TODO:
-      // - Query tasks that are due today and not completed
-      // - Use supabase.from("tasks").select(...)
-      // - You can do date filtering in SQL or client-side
+      const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
 
-      // Example:
-      // const { data, error } = await supabase
-      //   .from("tasks")
-      //   .select("*")
-      //   .eq("status", "open");
+      const { data, error } = await supabase
+        .from("tasks")
+        .select("*")
+        .gte("due_at", `${today}T00:00:00Z`)
+        .lte("due_at", `${today}T23:59:59Z`)
+        .neq("status", "completed") // avoid completed tasks
+        .order("due_at", { ascending: true });
 
-      setTasks([]);
+      if (error) throw error;
+
+      setTasks(data || []);
     } catch (err: any) {
       console.error(err);
       setError("Failed to load tasks");
@@ -39,11 +43,20 @@ export default function TodayDashboard() {
     }
   }
 
+  // -------------------------
+  // MARK COMPLETE
+  // -------------------------
   async function markComplete(id: string) {
     try {
-      // TODO:
-      // - Update task.status to 'completed'
-      // - Re-fetch tasks or update state optimistically
+      const { error } = await supabase
+        .from("tasks")
+        .update({ status: "completed" })
+        .eq("id", id);
+
+      if (error) throw error;
+
+      // refresh tasks list
+      fetchTasks();
     } catch (err: any) {
       console.error(err);
       alert("Failed to update task");
@@ -54,12 +67,16 @@ export default function TodayDashboard() {
     fetchTasks();
   }, []);
 
+  // -------------------------
+  // UI STATES
+  // -------------------------
   if (loading) return <div>Loading tasks...</div>;
   if (error) return <div style={{ color: "red" }}>{error}</div>;
 
   return (
     <main style={{ padding: "1.5rem" }}>
-      <h1>Today&apos;s Tasks</h1>
+      <h1>Today's Tasks</h1>
+
       {tasks.length === 0 && <p>No tasks due today 🎉</p>}
 
       {tasks.length > 0 && (
@@ -73,6 +90,7 @@ export default function TodayDashboard() {
               <th>Action</th>
             </tr>
           </thead>
+
           <tbody>
             {tasks.map((t) => (
               <tr key={t.id}>
