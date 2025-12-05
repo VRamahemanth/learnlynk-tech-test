@@ -1,25 +1,79 @@
 -- LearnLynk Tech Test - Task 2: RLS Policies on leads
 
+-- Enable RLS
 alter table public.leads enable row level security;
 
--- Example helper: assume JWT has tenant_id, user_id, role.
--- You can use: current_setting('request.jwt.claims', true)::jsonb
+-- Extract JWT helper:
+-- current_setting('request.jwt.claims', true)::jsonb
 
--- TODO: write a policy so:
--- - counselors see leads where they are owner_id OR in one of their teams
--- - admins can see all leads of their tenant
+--------------------------------------------------------
+-- SELECT POLICY
+--------------------------------------------------------
 
-
--- Example skeleton for SELECT (replace with your own logic):
+drop policy if exists "leads_select_policy" on public.leads;
 
 create policy "leads_select_policy"
 on public.leads
 for select
 using (
-  true
-  -- TODO: add real RLS logic here, refer to README instructions
+
+  -- Admins: can read all leads inside their tenant
+  (
+    (current_setting('request.jwt.claims', true)::jsonb ->> 'role') = 'admin'
+    AND tenant_id = (
+      current_setting('request.jwt.claims', true)::jsonb ->> 'tenant_id'
+    )::uuid
+  )
+
+  OR
+
+  -- Counselors: can read their own leads
+  (
+    (current_setting('request.jwt.claims', true)::jsonb ->> 'role') = 'counselor'
+    AND owner_id = (
+      current_setting('request.jwt.claims', true)::jsonb ->> 'user_id'
+    )::uuid
+  )
+
+  OR
+
+  -- Counselors: can also read leads assigned to someone in their team
+  (
+    (current_setting('request.jwt.claims', true)::jsonb ->> 'role') = 'counselor'
+    AND EXISTS (
+      SELECT 1
+      FROM public.user_teams ut_c
+      JOIN public.user_teams ut_o
+        ON ut_c.team_id = ut_o.team_id
+      WHERE ut_c.user_id = (
+        current_setting('request.jwt.claims', true)::jsonb ->> 'user_id'
+      )::uuid
+      AND ut_o.user_id = public.leads.owner_id
+    )
+  )
 );
 
--- TODO: add INSERT policy that:
--- - allows counselors/admins to insert leads for their tenant
--- - ensures tenant_id is correctly set/validated
+--------------------------------------------------------
+-- INSERT POLICY
+--------------------------------------------------------
+
+drop policy if exists "leads_insert_policy" on public.leads;
+
+create policy "leads_insert_policy"
+on public.leads
+for insert
+with check (
+
+  -- Allow only: admin OR counselor
+  (
+    (current_setting('request.jwt.claims', true)::jsonb ->> 'role')
+    IN ('admin', 'counselor')
+  )
+
+  AND
+
+  -- Ensure inserted lead belongs to user's tenant
+  tenant_id = (
+    current_setting('request.jwt.claims', true)::jsonb ->> 'tenant_id'
+  )::uuid
+);
