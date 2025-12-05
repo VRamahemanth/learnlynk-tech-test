@@ -154,8 +154,14 @@ Write **8–12 lines** describing how you would implement a Stripe Checkout flow
 - When you call Stripe  
 - What you store from the checkout session  
 - How you handle webhooks  
-- How you update the application after payment succeeds  
+- How you update the application after payment succeeds
 
+- 
+To implement Stripe Checkout for the application fee, I would create a backend endpoint /create-checkout-session that receives the application_id. When this endpoint is hit, I first insert a new row into payment_requests containing the application_id, amount, currency, and a placeholder for the Stripe session ID. After storing this record, I call stripe.checkout.sessions.create() with success/cancel URLs and pass the payment_request.id as metadata.
+
+The Checkout session returns session.id, which I then update into the payment_requests table. The user is redirected to the Stripe-hosted Checkout page.
+
+I also set up a Stripe webhook endpoint to listen for checkout.session.completed. In the webhook handler, I verify the signature, fetch the corresponding payment_request using the metadata/session_id, and mark it as paid. After successful payment, I update the related application's payment status and optionally update its stage (e.g., “fee_paid”). This ensures the CRM reflects the payment in real time.
 ---
 
 ## Submission
